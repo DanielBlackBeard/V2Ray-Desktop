@@ -1,0 +1,69 @@
+name: MacOSTestRelease.yml
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      # Install dependencies
+      - name: Install macOS dependencies
+        run: |
+          brew install wget
+      # Install Qt
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v2
+        with:
+          version: '6.2.3'
+          target: desktop
+      # Clone the source code
+      - name: Get the source code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+          submodules: true
+      # Build
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          qmake ../src/V2Ray-Desktop.pro
+          make -j16
+      # Integrate with clash 1.9.0
+      - name: Get clash-1.9.0
+        run: |
+          wget https://github.com/Dreamacro/clash/releases/download/v1.9.0/clash-darwin-amd64-v1.9.0.gz
+          wget https://github.com/Dreamacro/maxmind-geoip/releases/latest/download/Country.mmdb
+          mkdir build/V2Ray-Desktop.app/Contents/MacOS/clash-core
+          gzip -d clash-darwin-amd64-v1.9.0.gz
+          mv clash-darwin-amd64-v1.9.0 build/V2Ray-Desktop.app/Contents/MacOS/clash-core/clash
+          chmod a+x build/V2Ray-Desktop.app/Contents/MacOS/clash-core/clash
+          mv Country.mmdb build/V2Ray-Desktop.app/Contents/MacOS/clash-core/Country.mmdb
+      # Localization
+      - name: Localization
+        run: |
+          lrelease src/V2Ray-Desktop.pro
+          mkdir build/V2Ray-Desktop.app/Contents/MacOS/locales
+          cp src/locales/*.qm build/V2Ray-Desktop.app/Contents/MacOS/locales
+      # Generate dmg
+      - name: Package
+        run: |
+          macdeployqt build/V2Ray-Desktop.app -dmg -qmldir=src/ui
+          mv build/V2Ray-Desktop.dmg .
+      # Upload binaries to release
+      - name: Get release
+        id: get_release
+        uses: bruceadams/get-release@v1.2.3
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload release binary
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
+          asset_path: V2Ray-Desktop.dmg
+          asset_name: V2Ray-Desktop-v${{ steps.get_release.outputs.tag_name }}-macOS-x86_64.dmg
+          asset_content_type: application/octet-stream
